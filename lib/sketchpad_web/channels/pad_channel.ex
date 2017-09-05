@@ -48,10 +48,10 @@ defmodule SketchpadWeb.PadChannel do
 
   def handle_info(:after_join, socket) do 
     %{pad: pad, user_id: user_id} = socket.assigns
+    push(socket, "presence_state", SketchpadWeb.Presence.list(socket))
     {:ok, _} = SketchpadWeb.Presence.track(socket, user_id, %{
       online_at: System.system_time()
     })
-    push(socket, "presence_state", SketchpadWeb.Presence.list(socket))
     for {user_id, %{strokes: strokes}} <- PadServer.render(pad) do
       for stroke <- Enum.reverse(strokes) do
         push(socket, "stroke", %{user_id: user_id, stroke: stroke})
