@@ -1,5 +1,5 @@
 import "phoenix_html"
-import {Socket, Presence} from "phoenix"
+import {Socket, Presence} from "./phoenix"
 import {Sketchpad, sanitize} from "./sketchpad"
 import socket from "./socket"
 
@@ -7,13 +7,17 @@ socket.connect()
 
 let App = {
   init() {
+    this.presences = {}
     this.padChannel = socket.channel("pad:lobby") 
     this.el = document.getElementById("sketchpad")
     this.pad = new Sketchpad(this.el, window.userId)
     this.clearButton = document.getElementById("clear-button")
     this.exportButton = document.getElementById("export-button")
+    //chat
     this.msgInput = document.getElementById("message-input")
     this.msgContainer = document.getElementById("messages")
+    //Presence
+    this.userList = document.getElementById("users")
 
     this.msgInput.addEventListener("keypress", e => {
       if(e.keyCode !== 13 || this.msgInput.value === "") {
@@ -34,6 +38,18 @@ let App = {
         })
         .receive("error", onError)
         .receive("timeout", onError)
+    })
+
+    this.padChannel.on("presence_state", state => {
+      this.presences = Presence.syncState(this.presences, state)
+    })
+
+    this.padChannel.on("presence_diff", diff => {
+      this.presences = Presence.syncDiff(this.presences, diff, 
+          this.onPresenceJoin.bind(this), 
+          this.onPresenceLeave.bind(this)    
+      )
+      this.renderUsers()
     })
 
     this.padChannel.on("new_message", ({user_id, body}) => {
@@ -65,18 +81,40 @@ let App = {
       this.pad.putStroke(user_id, stroke, {color: "#000000"})    
     })
 
-    let joinedAndSeed = ({strokes, user_id}) => {
-      for(let r in strokes) {
-        let stroke = strokes[r]
-        this.pad.putStroke(user_id, stroke, {color: "#000000"})
-      }
-    }
-
     this.padChannel.join()
-      .receive("ok", joinedAndSeed)
+      .receive("ok", resp => console.log("joined", resp))
       .receive("error", resp => console.log("failed to join", resp))
       .receive("timeout", resp => console.log("timed out", resp))
-  }  
+  },
+
+  renderUsers() {
+    let listBy = (id, {metas: [first, ...rest]}) => {
+      first.count = rest.length + 1
+      first.username = id
+      return first
+    }
+    let users = Presence.list(this.presences, listBy) 
+    this.userList.innerHTML = users.map(user => {
+      return `<br/>${sanitize(user.username)} (${user.count})`
+    }).join("")
+  },
+
+  onPresenceJoin(id, current, newPres) {
+    if(!current) {
+      console.log(`${id} has joined for the first time`)
+    } else {
+      console.log(`${id} has joined from another device or tab`)
+    }
+  },
+
+  onPresenceLeave(id, current, leftPres) {
+    if(current.metas.length === 0) {
+      console.log(`${id} has left the application`)  
+    } else {
+      console.log(`${id} has closed a tab or device app`)  
+    }
+  }
+
 }
 
 App.init()
