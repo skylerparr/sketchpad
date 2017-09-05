@@ -1,14 +1,19 @@
 defmodule Sketchpad.PadServer do 
   use GenServer
 
-  alias SketchpadWeb.PadChannel
+  alias SketchpadWeb.{PadChannel, Presence, Endpoint}
 
   def start_link(pad_id) do
     GenServer.start_link(__MODULE__, [pad_id], 
                          name: {:global, topic(pad_id)})
   end
 
+  defp schedule_png_request() do 
+    Process.send_after(self(), :png_request, 3_000)
+  end
+  
   def init([pad_id]) do 
+    schedule_png_request()
     {:ok, %{
       pad_id: pad_id, 
       users: %{},
@@ -17,6 +22,23 @@ defmodule Sketchpad.PadServer do
   end
 
   defp topic(pad_id), do: "pad:#{pad_id}"
+
+  def png_ack(encoded_png, user_id) do
+    with {:ok, decoded_png} <- Base.decode64(encoded_png),
+         {:ok, path} <- Briefly.create(),
+         {:ok, jpeg_path} <- Briefly.create,
+         :ok <- File.write(path, decoded_png),
+         args = ["-background", "white", "-flatten", path, "jpg:" <> jpeg_path],
+         {"", 0} <- System.cmd("convert", args),
+         {ascii, 0} <- System.cmd("jp2a", ["-i", jpeg_path])
+    do 
+      IO.inspect ascii
+      IO.inspect ">>>> #{user_id}"
+      {:ok, ascii}
+    else 
+      _ -> :error
+    end
+  end
 
   def find(pad_id) do 
     case :global.whereis_name(topic(pad_id)) do
@@ -35,6 +57,18 @@ defmodule Sketchpad.PadServer do
 
   def clear(pid, user_id) do 
     GenServer.call(pid, {:clear, user_id})
+  end
+
+  def handle_info(:png_request, %{topic: topic} = state) do 
+    case Presence.list(topic) do 
+      users when map_size(users) > 0 -> 
+        {user_id, %{metas: [first | _last]}} = Enum.random(users)
+        %{phx_ref: ref} = first
+        Endpoint.broadcast!(topic <> ":#{ref}", "png_request", %{})
+      _empty -> :noop
+    end
+    schedule_png_request()
+    {:noreply, state}
   end
 
   def handle_call({:clear, user_id}, _from, state) do 

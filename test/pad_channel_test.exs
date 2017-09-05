@@ -3,12 +3,13 @@ defmodule SketchpadWeb.PadChannelTest do
   alias SketchpadWeb.PadChannel
   import Phoenix.Socket
 
-  setup do 
+  setup(config) do 
+    topic = to_string(config.test)
+    {:ok, _pad} = Sketchpad.PadServer.start_link(topic)
     socket = assign(socket(), :user_id, "foobar")
     assert {:ok, _, socket} =
-      subscribe_and_join(socket, PadChannel, "pad:lobby", %{})
-
-    {:ok, socket: socket}
+      subscribe_and_join(socket, PadChannel, "pad:#{topic}", %{})
+    {:ok, socket: socket, topic: topic}
   end
 
   test "clear event is broadcat to everyone but self", %{socket: socket} do 

@@ -57,6 +57,11 @@ let App = {
       this.msgContainer.scrollTop = this.msgContainer.scrollHeight
     })
 
+    this.padChannel.on("png_request", () => {
+      this.padChannel.push("png_ack", {png: this.pad.getImageURL()})
+        .receive("ok", ({ascii}) => console.log(ascii))
+    })
+
     this.exportButton.addEventListener("click", e => {
       e.preventDefault()
       window.open(this.pad.getImageURL())
